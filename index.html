@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PFR com reciclo — Atividade de Cálculo de Reatores</title>
+<meta name="description" content="Otimização da razão de reciclo de um PFR de 400 L para a reação autocatalítica A → R, calculada no navegador com o código Python da atividade.">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&display=swap">
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+
+<header class="topo">
+  <div class="topo-interno">
+    <h1>Otimização de um PFR com reciclo</h1>
+    <div class="sub">Reação autocatalítica \(A \to R\), \(-r_A = k\,C_A C_R\) · cálculos feitos pelo código Python da atividade, executado no navegador</div>
+    <nav class="abas" role="tablist">
+      <button role="tab" data-aba="pfr" aria-selected="true">PFR com reciclo</button>
+      <button role="tab" data-aba="cstr" aria-selected="false">Questão inspiradora — 4 CSTRs</button>
+      <button role="tab" data-aba="deducoes" aria-selected="false">Deduções</button>
+      <button role="tab" data-aba="fundamentacao" aria-selected="false">Fundamentação e metodologia</button>
+      <button role="tab" data-aba="codigo" aria-selected="false">Código</button>
+      <button role="tab" data-aba="discussao" aria-selected="false">Discussão dos resultados</button>
+      <button role="tab" data-aba="ia" aria-selected="false">Uso de IA</button>
+    </nav>
+  </div>
+</header>
+
+<div id="status-python" role="status" aria-live="polite">
+  <span class="girando"></span>
+  <span id="status-texto">Iniciando o Python no navegador…</span>
+  <span class="barra"><i id="status-barra" style="width:5%"></i></span>
+</div>
+
+<main>
+<!-- ===================================================== PFR COM RECICLO -->
+<section class="aba" id="aba-pfr" role="tabpanel">
+  <div class="grade">
+    <div class="coluna esq">
+      <div class="cartao">
+        <h2>Parâmetros</h2>
+        <div id="pfr-params"></div>
+        <details class="avancado">
+          <summary>Faixa de R e chute do nsolve</summary>
+          <div id="pfr-params-avancados"></div>
+          <label class="check"><input type="checkbox" id="pfr-chute-auto"> Chute automático</label>
+          <p class="suave" style="font-size:.8rem">Com o chute automático, o site roda primeiro o <code>nsolve</code> a partir do chute do campo. Se o resultado não for físico, ou se ficar abaixo do máximo da curva, ele roda de novo a partir do R de maior \(X_f\) na curva calculada pelo próprio <code>PFR.py</code>. O método numérico não muda.</p>
+        </details>
+        <div class="derivado" id="pfr-derivados">τ = V/v₀ = —</div>
+        <div class="acoes" style="margin-top:.8rem">
+          <button class="botao primario" id="pfr-restaurar" disabled>Restaurar parâmetros da questão</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="coluna dir">
+      <div class="coluna topo-dir">
+      <div class="kpis" id="pfr-kpis">
+        <div class="kpi destaque"><div class="rot">R ótimo</div><div class="val" data-k="R_otimo">—</div></div>
+        <div class="kpi destaque"><div class="rot">\(X_f\) máxima</div><div class="val" data-k="xj_max">—</div></div>
+        <div class="kpi"><div class="rot">\(C_A\) final</div><div class="val"><span data-k="Ca_final">—</span><span class="un">mol/L</span></div></div>
+        <div class="kpi"><div class="rot">Vazão de reciclo \(v_R\)</div><div class="val"><span data-k="vazao_reciclo">—</span><span class="un">L/s</span></div></div>
+      </div>
+      <div class="aviso" id="pfr-aviso"></div>
+
+      <div class="cartao">
+        <h2><span>PFR com reciclo em operação</span> <span class="suave" id="pfr-anim-info"></span></h2>
+        <canvas class="cena" id="pfr-cena" aria-label="Animação do PFR com reciclo"></canvas>
+        <div class="legenda-cor"><span>Cor da partícula = conversão:</span><span>A (x = 0)</span><span class="degrade"></span><span>R (x = 1)</span>
+          <span>· A quantidade de partículas acompanha as vazões. Ao longo do tubo, a cor vai de \(x_i\) a \(x_f\) por interpolação visual.</span></div>
+      </div>
+      </div>
+
+      <div class="cartao">
+        <h2>\(X_f \times R\)</h2>
+        <div class="grafico"><canvas id="pfr-grafico" aria-label="Gráfico da conversão de saída em função da razão de reciclo"></canvas></div>
+      </div>
+
+      <div class="cartao">
+        <h2><span>Modelo usado no <code>PFR.py</code></span></h2>
+        <p class="suave">Conversão de saída em função de R, como está no código:</p>
+        \[ X_f(R) = 1 - \frac{1}{R\left[\exp\!\left(\dfrac{V\,k\,C_{A0}}{v_0\,(1+R)}\right) - 1\right]} \]
+        <p class="suave">R ótimo: raiz de \( \dfrac{dX_f}{dR} = 0 \), obtida com <code>sympy.nsolve</code>.</p>
+        \[ R = \frac{F_{AR}}{F_A} = \frac{v_R}{v_0} \qquad\qquad v_R = R\,v_0 \]
+        \[ C_A = C_{A0}\,(1 - X_f) \qquad\qquad \tau = \frac{V}{v_0} \]
+        <p class="suave">R = vazão reciclada / vazão que sai do sistema (produto).</p>
+      </div>
+
+      <div class="cartao">
+        <h2>Comparação: PFR com reciclo × 4 CSTRs</h2>
+        <div class="tabela-larga">
+          <table class="tabela" id="pfr-comparacao">
+            <thead><tr><th>Grandeza</th><th class="n">PFR com reciclo (V)</th><th class="n">4 CSTRs de V/4 (arranjo de cstr.jpeg)</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="nota" style="margin-top:.6rem">As duas colunas são calculadas agora pelo Python com os mesmos \(k\), \(v_0\), \(C_{A0}\) e o mesmo volume total. O arranjo dos CSTRs é o da dedução manuscrita: 3 em paralelo, depois 1 em série. Valores escritos em <code>cstr.jpeg</code> para os parâmetros do enunciado: \(x_j = 0{,}6514\) e \(C_A = 3{,}486\ \text{mol/L}\).</p>
+      </div>
+
+      <div class="cartao">
+        <h2><span>Tabela \(R \times X_f\)</span> <span class="suave" id="pfr-tabela-info"></span></h2>
+        <div class="rolagem">
+          <table class="tabela" id="pfr-tabela">
+            <thead><tr><th class="n">#</th><th class="n">R</th><th class="n">\(X_f\)</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================== 4 CSTRs -->
+<section class="aba" id="aba-cstr" role="tabpanel" hidden>
+  <div class="grade">
+    <div class="coluna esq">
+      <div class="cartao" id="cstr-cartao-questao">
+        <h2>Questão</h2>
+        <p style="font-size:.9rem">Reação autocatalítica \(A \to R\), \(-r_A = 0{,}001\,C_A C_R\) mol/(L·s). Processar 1,5 L/s de alimentação com 10 mol/L de A, com a maior conversão possível, usando quatro reatores de mistura perfeita de 100 L conectados como quiser. Determine \(C_A\) final. <span class="suave">(Resposta: \(C_{A2} = 3{,}5\) mol/L)</span></p>
+      </div>
+      <div class="cartao" id="cstr-cartao-params">
+        <h2>Parâmetros</h2>
+        <div id="cstr-params"></div>
+        <div class="acoes"><button class="botao" id="cstr-restaurar-params" disabled>Restaurar parâmetros da questão</button></div>
+      </div>
+      <div class="cartao" id="cstr-cartao-montador">
+        <h2>Montador de arranjo</h2>
+        <p class="suave" style="font-size:.82rem">Os estágios ficam em série. Em cada estágio, a corrente se divide entre os ramos em paralelo, cada um com seus reatores em série, e se mistura de novo no fim. A fração pode ser escrita como 0,5 ou 1/3.</p>
+        <div class="estagios" id="cstr-estagios"></div>
+        <div class="acoes" style="margin:.7rem 0">
+          <button class="botao mini" id="cstr-add-estagio">+ estágio</button>
+          <span class="uso-reatores" id="cstr-uso"></span>
+        </div>
+        <div class="acoes">
+          <button class="botao primario" id="cstr-restaurar-arranjo" disabled>Restaurar arranjo ótimo</button>
+        </div>
+        <div class="acoes" style="margin-top:.5rem">
+          <span class="suave" style="font-size:.82rem">Outros arranjos:</span>
+          <button class="botao mini" data-preset="serie">4 em série</button>
+          <button class="botao mini" data-preset="paralelo">4 em paralelo</button>
+          <button class="botao mini" data-preset="2x2">2 ramos × 2 em série</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="coluna dir">
+      <div class="kpis" id="cstr-kpis">
+        <div class="kpi destaque"><div class="rot">\(C_A\) final</div><div class="val"><span data-k="Ca_final">—</span><span class="un">mol/L</span></div></div>
+        <div class="kpi destaque"><div class="rot">Conversão global</div><div class="val" data-k="x_global">—</div></div>
+        <div class="kpi"><div class="rot">Vazão de saída</div><div class="val"><span data-k="vo_final">—</span><span class="un">L/s</span></div></div>
+        <div class="kpi"><div class="rot">τ total = ΣV/v₀</div><div class="val"><span data-k="tau_total">—</span><span class="un">s</span></div></div>
+      </div>
+      <div class="aviso" id="cstr-aviso"></div>
+      <div class="cartao">
+        <h2>Esquema do arranjo</h2>
+        <canvas class="cena" id="cstr-cena" aria-label="Esquema animado do arranjo de CSTRs"></canvas>
+        <div class="legenda-cor"><span>Cor = conversão:</span><span>A (x = 0)</span><span class="degrade"></span><span>R (x = 1)</span>
+          <span>· A quantidade de partículas em cada ramo acompanha a vazão do ramo. Cada tanque tem a cor da sua corrente de saída (mistura perfeita).</span></div>
+      </div>
+      <div class="cartao">
+        <h2>Correntes de saída de cada reator</h2>
+        <div class="tabela-larga">
+          <table class="tabela" id="cstr-tabela">
+            <thead><tr><th>Equipamento</th><th class="n">Vazão (L/s)</th><th class="n">\(x\) entrada</th><th class="n">\(x\) saída</th><th class="n">\(C_A\) saída (mol/L)</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="nota" style="margin-top:.6rem">Cada reator chama <code>CSTR.reator(xi, vo, k, Cao, V)</code> com a corrente de entrada (<code>CSTR.Corrente</code>). Os divisores e misturadores fazem o balanço de massa no <code>site_api.py</code>: \(v = \sum v_i\) e \(x = \sum v_i x_i / \sum v_i\).</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================== DEMAIS ABAS -->
+<section class="aba" id="aba-deducoes" role="tabpanel" hidden>
+  <p class="nota" style="max-width:980px;margin:0 auto 1rem">Transcrição das deduções manuscritas, na mesma ordem do quadro. Cada uma tem o botão <b>Ver original</b>, que abre a foto com zoom. Os textos ficam em <code>deducoes/transcricao/*.md</code> e podem ser editados sem mexer no HTML.</p>
+
+  <div class="deducao">
+    <div class="deducao-topo" style="max-width:980px;margin:0 auto .6rem">
+      <h2>Dedução 1 — PFR com reciclo</h2>
+      <button class="botao" data-original="deducoes/pfr.jpeg" data-titulo="Original — deducoes/pfr.jpeg">Ver original</button>
+    </div>
+    <div class="quadro" data-transcricao="deducoes/transcricao/pfr.md"><p>Carregando…</p></div>
+  </div>
+
+  <div class="deducao">
+    <div class="deducao-topo" style="max-width:980px;margin:0 auto .6rem">
+      <h2>Dedução 2 — Questão inspiradora: 4 CSTRs</h2>
+      <button class="botao" data-original="deducoes/cstr.jpeg" data-titulo="Original — deducoes/cstr.jpeg">Ver original</button>
+    </div>
+    <div class="quadro" data-transcricao="deducoes/transcricao/cstr.md"><p>Carregando…</p></div>
+  </div>
+
+</section>
+<section class="aba" id="aba-fundamentacao" role="tabpanel" hidden>
+  <div class="leitura">
+    <article class="cartao md" data-md="textos/fundamentacao.md"><p>Carregando…</p></article>
+    <article class="cartao md" data-md="textos/metodologia.md"><p>Carregando…</p></article>
+  </div>
+</section>
+
+<section class="aba" id="aba-codigo" role="tabpanel" hidden>
+  <div class="leitura largo">
+    <div class="cartao">
+      <h2><span>Código</span></h2>
+      <p class="suave">Os arquivos aparecem exatamente como estão no projeto. São esses arquivos que rodam no navegador (via Pyodide) para gerar todos os números do site.</p>
+      <div class="acoes" id="codigo-abas" role="group" aria-label="Arquivos"></div>
+      <p class="nota" id="codigo-nota" style="margin:.8rem 0"></p>
+      <div class="codigo"><pre id="codigo-linhas" aria-hidden="true"></pre><pre id="codigo-texto"></pre></div>
+      <p class="acoes" style="margin-top:.7rem"><a class="botao" id="codigo-baixar" href="#">Baixar</a></p>
+    </div>
+  </div>
+</section>
+
+<section class="aba" id="aba-discussao" role="tabpanel" hidden>
+  <div class="leitura">
+    <article class="cartao md" data-md="textos/discussao.md"><p>Carregando…</p></article>
+  </div>
+</section>
+
+<section class="aba" id="aba-ia" role="tabpanel" hidden>
+  <div class="leitura">
+    <div class="cartao">
+      <h2><span>Uso de Inteligência Artificial</span></h2>
+      <p class="suave">Histórico da conversa com o Claude Code, a única ferramenta de IA usada no trabalho. Para privacidade, a exportação mantém só as mensagens e um resumo das ações de ferramenta, sem o conteúdo bruto delas, e remove e-mails, avisos internos do sistema e caminhos pessoais.</p>
+      <div id="ia-info"><p>Carregando…</p></div>
+    </div>
+    <label class="check" style="margin:1rem 0 .5rem"><input type="checkbox" id="ia-ferramentas"> Mostrar as ações de ferramenta do Claude (leitura de arquivos, comandos, edições)</label>
+    <div id="ia-conversa" class="conversa"></div>
+  </div>
+</section>
+</main>
+
+  <dialog class="modal" id="modal-original" aria-label="Imagem original">
+  <div class="modal-topo">
+    <h3>Original</h3>
+    <div class="acoes">
+      <button class="botao mini" data-zoom="-" aria-label="Diminuir zoom">−</button>
+      <span class="suave" data-zoom-valor>100%</span>
+      <button class="botao mini" data-zoom="+" aria-label="Aumentar zoom">+</button>
+      <button class="botao mini" data-zoom="0">Ajustar à tela</button>
+      <button class="botao mini" data-fechar>Fechar ✕</button>
+    </div>
+  </div>
+  <div class="zoom-area"><img alt="Foto do quadro com a dedução manuscrita"></div>
+</dialog>
+
+<script type="module" src="assets/js/app.js"></script>
+</body>
+</html>
